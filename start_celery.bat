@@ -1,27 +1,24 @@
 @echo off
 echo ====================================
-echo 论文知识图谱系统 - 启动 Celery Worker
+echo PaperGraph Celery Worker Starter
 echo ====================================
 echo.
 
-REM 激活虚拟环境
 if exist venv\Scripts\activate.bat (
     call venv\Scripts\activate.bat
-    echo [OK] 虚拟环境已激活
+    echo [OK] Virtual environment activated
 ) else (
-    echo [ERROR] 找不到虚拟环境，请先运行 setup.bat
+    echo [ERROR] Cannot find virtual environment, please run setup.bat first
     pause
     exit /b 1
 )
 
-REM 启动 Celery Worker
 echo.
-echo 正在启动 Celery Worker...
+echo Activating Celery Worker...
 echo.
-echo 按 Ctrl+C 停止 Worker
+echo Press Ctrl+C to stop Worker
 echo.
 
 celery -A app.tasks.celery_app worker --loglevel=info --pool=solo
 
 pause
-

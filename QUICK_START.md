@@ -216,9 +216,7 @@ curl http://localhost:8000/api/v1/graph/root?limit=10
 ### 3. 查询统计数据 / Query Statistics
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/statistics/query \
-  -H "Content-Type: application/json" \
-  -d '{"metric": "top_authors", "limit": 5}'
+curl -X POST http://localhost:8000/api/v1/statistics/query -H "Content-Type: application/json" -d "{\"metric\": \"top_authors\", \"limit\": 5}"
 ```
 
 ### 4. 访问 API 文档 / Visit API Docs

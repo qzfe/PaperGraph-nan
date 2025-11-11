@@ -137,7 +137,7 @@ start_celery.bat
 ```bash
 # Terminal 1: Start main server / 终端1：启动主服务
 source venv/bin/activate
-python app/main.py
+python -m app.main
 
 # Terminal 2: Start Celery worker / 终端2：启动 Celery worker
 source venv/bin/activate
