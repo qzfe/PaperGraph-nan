@@ -8,15 +8,15 @@ from app.schemas.graph import (
 )
 from app.services.graph_service import GraphService
 from app.repositories.neo4j_dao import GraphDAO
-from app.database import get_neo4j_session, get_redis_client
+from app.database import get_neo4j_driver, get_neo4j_session, get_redis_client
 from loguru import logger
 
 router = APIRouter(prefix="/graph", tags=["图谱展示"])
 
 def get_graph_service():
-    neo4j_session = next(get_neo4j_session())
+    neo4j_driver = get_neo4j_driver()
     redis_client = get_redis_client()
-    dao = GraphDAO(neo4j_session)
+    dao = GraphDAO(neo4j_driver)
     return GraphService(dao, redis_client)
 
 @router.get("/root", response_model=GraphResponse, summary="获取根节点图谱")

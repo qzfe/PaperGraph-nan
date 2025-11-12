@@ -68,6 +68,11 @@ class Neo4jConnection:
         if self._driver is None:
             self.connect()
         return self._driver.session()
+    
+    def get_driver(self):
+        if self._driver is None:
+            self.connect()
+        return self._driver
 
 
 # 全局 Neo4j 连接实例
@@ -81,6 +86,10 @@ def get_neo4j_session():
         yield session
     finally:
         session.close()
+
+def get_neo4j_driver():
+    """获取 Neo4j driver"""
+    return neo4j_conn.get_driver()
 
 
 # Redis Connection
