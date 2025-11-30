@@ -35,16 +35,17 @@ def fetch_author(author_id):
 
 def clean_author(raw):
     author_id = raw["id"].split("/")[-1]
-    org = raw.get("last_known_institution", {}) 
+    inst = raw.get("last_known_institution") or {}
     return {
         "author_id": author_id,
         "name": raw.get("display_name", ""),
-        "org_id": org.get("id", "").split("/")[-1] if org else None,
+        "org_id": inst.get("id", "").split("/")[-1] if inst else None,
         "h_index": raw.get("h_index", 0),
         "paper_count": raw.get("works_count", 0),
         "orcid": raw.get("orcid", ""),
-        "email": ""  # OpenAlex 没有邮箱字段，可用其他 API补充
+        "email": ""
     }
+
 
 def fetch_org(org_id):
     url = f"https://api.openalex.org/institutions/{org_id}"
@@ -55,7 +56,7 @@ def clean_org(raw):
         "org_id": raw["id"].split("/")[-1],
         "name": raw.get("display_name", ""),
         "country": raw.get("country_code", ""),
-        "abbreviation": raw.get("display_name_acronyms", [""])[0],
+        "abbreviation": (raw.get("display_name_acronyms") or [""])[0],
         "rank_score": raw.get("x_concepts", [{}])[0].get("score", 0),
         "paper_count": raw.get("works_count", 0)
     }
@@ -91,8 +92,9 @@ def crawl(keyword):
             if author_id not in authors:
                 raw_author = fetch_author(author_id)
                 authors[author_id] = clean_author(raw_author)
-                org_id = authors[author_id]["org_id"]
-                if org_id and org_id not in orgs:
+                for inst in auth.get("institutions", []):
+                    org_id = inst["id"].split("/")[-1]
+                if org_id not in orgs:
                     raw_org = fetch_org(org_id)
                     orgs[org_id] = clean_org(raw_org)
 
