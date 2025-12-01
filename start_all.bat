@@ -1,192 +1,185 @@
 @echo off
 chcp 65001 >nul
 echo ====================================
-<<<<<<< HEAD
-=======
-echo PaperGraph - ä¸€é”®å¯åŠ¨æ‰€æœ‰æœåŠ¡
->>>>>>> 1323288fd3d48c4c20eb59d7158432c9aacf479e
+echo PaperGraph - Ò»¼üÆô¶¯ËùÓÐ·þÎñ
 echo PaperGraph - Start All Services
 echo ====================================
 echo.
 
-<<<<<<< HEAD
+REM ¼ì²éPythonÊÇ·ñ°²×°
 python --version >nul 2>&1
 if errorlevel 1 (
-=======
-REM æ£€æŸ¥Pythonæ˜¯å¦å®‰è£…
-python --version >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] æœªæ‰¾åˆ°Pythonï¼Œè¯·å…ˆå®‰è£…Python 3.9+
->>>>>>> 1323288fd3d48c4c20eb59d7158432c9aacf479e
+    echo [ERROR] Î´ÕÒµ½Python£¬ÇëÏÈ°²×°Python 3.9+
     echo [ERROR] Cannot find Python, please install Python 3.9+ first
     pause
     exit /b 1
 )
 
-<<<<<<< HEAD
+REM ²½Öè1: ÔËÐÐsetup£¨Èç¹ûÐéÄâ»·¾³²»´æÔÚ£©
 if not exist "venv\" (
     echo ====================================
-=======
-REM æ­¥éª¤1: è¿è¡Œsetupï¼ˆå¦‚æžœè™šæ‹ŸçŽ¯å¢ƒä¸å­˜åœ¨ï¼‰
-if not exist "venv\" (
-    echo ====================================
-    echo æ­¥éª¤ 1/4: è®¾ç½®çŽ¯å¢ƒ
->>>>>>> 1323288fd3d48c4c20eb59d7158432c9aacf479e
+    echo ²½Öè 1/4: ÉèÖÃ»·¾³
     echo Step 1/4: Setting up environment
     echo ====================================
     echo.
     call setup.bat
     if errorlevel 1 (
-<<<<<<< HEAD
-=======
-        echo [ERROR] çŽ¯å¢ƒè®¾ç½®å¤±è´¥
->>>>>>> 1323288fd3d48c4c20eb59d7158432c9aacf479e
+        echo [ERROR] »·¾³ÉèÖÃÊ§°Ü
         echo [ERROR] Environment setup failed
         pause
         exit /b 1
     )
     echo.
 ) else (
-<<<<<<< HEAD
-=======
-    echo [OK] è™šæ‹ŸçŽ¯å¢ƒå·²å­˜åœ¨
->>>>>>> 1323288fd3d48c4c20eb59d7158432c9aacf479e
+    echo [OK] ÐéÄâ»·¾³ÒÑ´æÔÚ
     echo [OK] Virtual environment already exists
     echo.
 )
 
-<<<<<<< HEAD
+REM ¼¤»îÐéÄâ»·¾³
 call venv\Scripts\activate.bat
 if errorlevel 1 (
-=======
-REM æ¿€æ´»è™šæ‹ŸçŽ¯å¢ƒ
-call venv\Scripts\activate.bat
-if errorlevel 1 (
-    echo [ERROR] æ— æ³•æ¿€æ´»è™šæ‹ŸçŽ¯å¢ƒ
->>>>>>> 1323288fd3d48c4c20eb59d7158432c9aacf479e
+    echo [ERROR] ÎÞ·¨¼¤»îÐéÄâ»·¾³
     echo [ERROR] Cannot activate virtual environment
     pause
     exit /b 1
 )
 
-<<<<<<< HEAD
+REM ²½Öè2: ¼ì²é²¢Æô¶¯Redis/Memurai·þÎñ
 echo ====================================
-=======
-
->>>>>>> 1323288fd3d48c4c20eb59d7158432c9aacf479e
-echo Step 2/4: Checking Redis service
+echo ²½Öè 2/5: ¼ì²éRedis·þÎñ
+echo Step 2/5: Checking Redis service
 echo ====================================
 echo.
 sc query Memurai >nul 2>&1
 if errorlevel 1 (
-<<<<<<< HEAD
+    echo [WARNING] Memurai·þÎñÎ´ÔËÐÐ£¬ÇëÊÖ¶¯Æô¶¯
     echo [WARNING] Memurai service is not running, please start it manually
+    echo ÔËÐÐÃüÁî: net start Memurai
     echo Run command: net start Memurai
     echo.
 ) else (
-=======
-
->>>>>>> 1323288fd3d48c4c20eb59d7158432c9aacf479e
+    echo [OK] Redis/Memurai·þÎñ¼ì²éÍê³É
     echo [OK] Redis/Memurai service check completed
     echo.
 )
 
-<<<<<<< HEAD
+REM ²½Öè3: ³õÊ¼»¯Êý¾Ý¿â²¢¼ÓÔØÊý¾Ý
 echo ====================================
-=======
+echo ²½Öè 3/5: ³õÊ¼»¯Êý¾Ý¿â²¢¼ÓÔØÊý¾Ý
+echo Step 3/5: Initialize database and load data
+echo ====================================
+echo.
+echo [INFO] ÕýÔÚ³õÊ¼»¯Êý¾Ý¿â...
+echo [INFO] Initializing database...
+python scripts\init_database.py
+if errorlevel 1 (
+    echo [ERROR] Êý¾Ý¿â³õÊ¼»¯Ê§°Ü
+    echo [ERROR] Database initialization failed
+    pause
+    exit /b 1
+)
+echo.
+echo [INFO] ÕýÔÚ¼ÓÔØÊ¾ÀýÊý¾Ý£¨10Ëù¸ßÐ£ ¡Á 10Ãû×÷Õß ¡Á 10ÆªÎÄÕÂ = 1000ÆªÎÄÕÂ£©...
+echo [INFO] Loading sample data (10 universities ¡Á 10 authors ¡Á 10 papers = 1000 papers)...
+python scripts\load_sample_data.py
+if errorlevel 1 (
+    echo [ERROR] Êý¾Ý¼ÓÔØÊ§°Ü
+    echo [ERROR] Data loading failed
+    pause
+    exit /b 1
+)
+echo [OK] Êý¾Ý¿â³õÊ¼»¯ºÍÊý¾Ý¼ÓÔØÍê³É
+echo [OK] Database initialization and data loading completed
+echo.
 
->>>>>>> 1323288fd3d48c4c20eb59d7158432c9aacf479e
-echo Step 3/4: Starting backend services
+REM ²½Öè4: Æô¶¯ºó¶Ë·þÎñÆ÷£¨ÔÚÐÂ´°¿ÚÖÐ£©
+echo ====================================
+echo ²½Öè 4/5: Æô¶¯ºó¶Ë·þÎñ
+echo Step 4/5: Starting backend services
 echo ====================================
 echo.
 
-<<<<<<< HEAD
+REM Æô¶¯FastAPI·þÎñÆ÷
+echo [INFO] ÕýÔÚÆô¶¯FastAPI·þÎñÆ÷...
 echo [INFO] Starting FastAPI server...
 start "PaperGraph - FastAPI Server" cmd /k "cd /d %~dp0 && call venv\Scripts\activate.bat && echo ==================================== && echo FastAPI Server && echo ==================================== && echo Visit http://localhost:8000/docs for API documentation && echo Press Ctrl+C to stop server && echo. && python -m app.main"
 
+REM µÈ´ýÒ»ÏÂÈ·±£·þÎñÆ÷Æô¶¯
 timeout /t 3 /nobreak >nul
 
+REM Æô¶¯Celery Worker
+echo [INFO] ÕýÔÚÆô¶¯Celery Worker...
 echo [INFO] Starting Celery Worker...
 start "PaperGraph - Celery Worker" cmd /k "cd /d %~dp0 && call venv\Scripts\activate.bat && set CELERY_BROKER_URL=redis://localhost:6379/1 && set CELERY_RESULT_BACKEND=redis://localhost:6379/2 && echo ==================================== && echo Celery Worker && echo ==================================== && echo Press Ctrl+C to stop worker && echo. && celery -A app.tasks.celery_app worker --loglevel=info --pool=solo"
 
+REM µÈ´ýÒ»ÏÂÈ·±£WorkerÆô¶¯
 timeout /t 2 /nobreak >nul
 
+REM ²½Öè5: Æô¶¯Ç°¶Ë·þÎñ£¨ÔÚÐÂ´°¿ÚÖÐ£©
 echo ====================================
-=======
-
->>>>>>> 1323288fd3d48c4c20eb59d7158432c9aacf479e
-echo Step 4/4: Starting frontend service
+echo ²½Öè 5/5: Æô¶¯Ç°¶Ë·þÎñ
+echo Step 5/5: Starting frontend service
 echo ====================================
 echo.
 
 set FRONTEND_DIR=knowledge_graph_system_v2\knowledge_graph_system_v2
 
 if not exist "%FRONTEND_DIR%" (
-<<<<<<< HEAD
-=======
-    echo [ERROR] å‰ç«¯ç›®å½•ä¸å­˜åœ¨: %FRONTEND_DIR%
->>>>>>> 1323288fd3d48c4c20eb59d7158432c9aacf479e
+    echo [ERROR] Ç°¶ËÄ¿Â¼²»´æÔÚ: %FRONTEND_DIR%
     echo [ERROR] Frontend directory not found: %FRONTEND_DIR%
     pause
     exit /b 1
 )
 
-<<<<<<< HEAD
+REM ¼ì²énode_modulesÊÇ·ñ´æÔÚ£¬Èç¹û²»´æÔÚÔòÏÈ°²×°ÒÀÀµ
 if not exist "%FRONTEND_DIR%\node_modules" (
-=======
-
->>>>>>> 1323288fd3d48c4c20eb59d7158432c9aacf479e
+    echo [INFO] ¼ì²âµ½Ç°¶ËÒÀÀµÎ´°²×°£¬ÕýÔÚ°²×°...
     echo [INFO] Frontend dependencies not found, installing...
     cd /d "%FRONTEND_DIR%"
     call npm install
     if errorlevel 1 (
-<<<<<<< HEAD
-=======
-
->>>>>>> 1323288fd3d48c4c20eb59d7158432c9aacf479e
+        echo [ERROR] Ç°¶ËÒÀÀµ°²×°Ê§°Ü
         echo [ERROR] Frontend dependencies installation failed
         pause
         exit /b 1
     )
     cd /d %~dp0
-<<<<<<< HEAD
-=======
-
->>>>>>> 1323288fd3d48c4c20eb59d7158432c9aacf479e
+    echo [OK] Ç°¶ËÒÀÀµ°²×°Íê³É
     echo [OK] Frontend dependencies installed
     echo.
 )
 
-<<<<<<< HEAD
-=======
-
->>>>>>> 1323288fd3d48c4c20eb59d7158432c9aacf479e
+REM Æô¶¯Ç°¶Ë·þÎñ
+echo [INFO] ÕýÔÚÆô¶¯Ç°¶Ë·þÎñ...
 echo [INFO] Starting frontend service...
 start "PaperGraph - Frontend Server" cmd /k "cd /d %~dp0\%FRONTEND_DIR% && echo ==================================== && echo Frontend Server && echo ==================================== && echo Visit http://localhost:3000 in your browser && echo Press Ctrl+C to stop server && echo. && npm run serve"
 
 echo.
 echo ====================================
-<<<<<<< HEAD
+echo ËùÓÐ·þÎñÒÑÆô¶¯£¡
 echo All services started!
 echo ====================================
 echo.
+echo ÒÑ´ò¿ªÒÔÏÂ´°¿Ú£º
 echo The following windows have been opened:
 echo.
 echo 1. FastAPI Server - http://localhost:8000
+echo    APIÎÄµµ: http://localhost:8000/docs
 echo    API Docs: http://localhost:8000/docs
 echo.
+echo 2. Celery Worker - ºóÌ¨ÈÎÎñ´¦Àí
 echo    Background task processing
 echo.
 echo 3. Frontend Server - http://localhost:3000
+echo    Ç°¶Ë½çÃæ: http://localhost:3000
 echo    Frontend UI: http://localhost:3000
 echo.
 echo ====================================
+echo ÌáÊ¾: ¹Ø±Õ¶ÔÓ¦µÄ´°¿Ú¼´¿ÉÍ£Ö¹¶ÔÓ¦µÄ·þÎñ
 echo Tip: Close the corresponding window to stop the service
 echo ====================================
 echo.
-=======
-
->>>>>>> 1323288fd3d48c4c20eb59d7158432c9aacf479e
+echo °´ÈÎÒâ¼ü¹Ø±Õ´Ë´°¿Ú...
 echo Press any key to close this window...
 pause >nul
-
