@@ -80,6 +80,23 @@
         <a-button size="small" shape="circle" @click="zoomGraph(0.8)">-</a-button>
       </div>
 
+      <!-- 导出按钮：左下角 -->
+      <div style="position: absolute; left: 16px; bottom: 16px; z-index: 10">
+        <a-button
+          type="primary"
+          style="
+            height: 36px;
+            min-width: 100px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+          "
+          @click="exportGraph"
+        >
+          导出图谱
+        </a-button>
+      </div>
+
       <!-- 方向控制按钮 -->
       <div
         style="
@@ -158,7 +175,7 @@
         <div v-if="!selected">请单击节点/边</div>
         <a-form v-else layout="vertical" size="small">
           <a-form-item label="名称">
-            <a-input :value="selected.label" readonly />
+            <a-input :value="selected.name" readonly />
           </a-form-item>
           <a-form-item label="类型">
             <a-tag :color="tagColor(selected.type)">
@@ -210,6 +227,8 @@ import * as echarts from "echarts";
 import type { GraphDTO, Node, Edge } from "@/types/graph";
 import { message } from "ant-design-vue";
 import { fetchRootGraph, persistLayout, type GraphResponse } from "@/api/graph";
+import { post as apiPost, get as apiGet } from "@/api/http";
+import axios from "axios";
 /* 筛选状态 */
 const filter = ref({
   year: [2020, 2025],
@@ -269,6 +288,93 @@ function zoomGraph(factor: number) {
   } catch (e) {
     console.warn("图谱缩放失败:", e);
   }
+}
+
+function exportGraph() {
+  if (!ins) return;
+
+  // 执行三轮导出：papers, authors, organizations
+  (async () => {
+    const types = ["papers", "authors", "organizations"];
+    for (const t of types) {
+      try {
+        message.loading({ content: `开始创建 ${t} 导出任务...`, duration: 0, key: `export-${t}` });
+
+        const body = {
+          export_type: t,
+          format: "csv",
+          filters: {},
+          fields: [],
+        };
+
+        // 1. 创建任务
+        const createResp: any = await apiPost("/export/file", body);
+        const jobId = createResp?.job_id || createResp?.jobId || createResp?.id;
+        const status = createResp?.status;
+        if (!jobId || status !== "pending") {
+          message.error(`创建 ${t} 导出任务失败`);
+          message.destroy(`export-${t}`);
+          return;
+        }
+
+        // 2. 轮询任务状态，最多 3 次（间隔 1 秒）
+        let done = false;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const jobResp: any = await apiGet(`/export/job/${jobId}`);
+          const jobStatus = jobResp?.status;
+          if (jobStatus === "done") {
+            done = true;
+            break;
+          }
+          // 否则等待 1 秒后继续
+          await new Promise((res) => setTimeout(res, 1000));
+        }
+
+        if (!done) {
+          message.error(`${t} 导出任务未在指定时间内完成，导出失败`);
+          message.destroy(`export-${t}`);
+          return;
+        }
+
+        // 3. 下载文件（以 blob 下载）
+        message.loading({ content: `下载 ${t} 导出文件...`, duration: 0, key: `export-${t}` });
+        const downloadUrl = `${process.env.VUE_APP_API_BASE.replace(
+          /\/$/,
+          ""
+        )}/export/download/${jobId}`;
+        const resp = await axios.get(downloadUrl, { responseType: "blob" });
+
+        // 尝试从 headers 提取文件名
+        let filename = `${t}.csv`;
+        const cd = resp.headers?.["content-disposition"] || resp.headers?.["Content-Disposition"];
+        if (cd) {
+          const m = /filename\*=UTF-8''(.+)$/.exec(cd) || /filename="?([^";]+)"?/.exec(cd);
+          if (m && m[1]) {
+            try {
+              filename = decodeURIComponent(m[1]);
+            } catch (e) {
+              filename = m[1];
+            }
+          }
+        }
+
+        const url = URL.createObjectURL(resp.data);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+
+        message.success({ content: `${t} 导出并下载完成`, key: `export-${t}`, duration: 2 });
+      } catch (err) {
+        console.error("export failed", err);
+        message.error(`导出 ${t} 失败: ${err instanceof Error ? err.message : String(err)}`);
+        return;
+      }
+    }
+  })();
 }
 
 /**
@@ -334,8 +440,15 @@ async function onFilter() {
       rawData.edges.filter((e: any) => e.type === "AFFILIATED_WITH")
     );
 
-    // 将后端通用节点结构映射为前端 Node 结构，并补充不同类型的字段
-    const processedNodes: Node[] = rawData.nodes.map((node) => {
+    // 将后端通用节点结构映射为前端 Node 结构（先做一次映射），然后再基于筛选器做过滤。
+    const yearStart = params.yearStart;
+    const yearEnd = params.yearEnd;
+    const orgFilters = params.orgs || [];
+    const authorFilter = (params.author || "").toString().trim().toLowerCase();
+
+    // 第一次映射：把 raw node 映射为前端 Node（但不立即按筛选器丢弃），同时时保留 raw node id
+    const rawMapped: { rawId: any; node: Node; raw: any }[] = [];
+    rawData.nodes.forEach((node: any) => {
       const props = node.properties || {};
       const type = node.label as "Paper" | "Author" | "Organization";
 
@@ -343,17 +456,14 @@ async function onFilter() {
         id: props.id || node.id,
         type,
         label: props.name || props.title || node.label,
-        // 通用属性直接铺开
         ...props,
       };
 
-      // 针对不同类型做字段映射，让右侧详情可以正确显示
       if (type === "Author") {
         base.hIndex = props.h_index ?? props.hIndex;
         base.orcid = props.orcid;
       } else if (type === "Organization") {
         base.country = props.country;
-        // rank_score -> rank
         const rankScore = props.rank_score ?? props.rank;
         base.rank = typeof rankScore === "number" ? rankScore : Number(rankScore || 0);
       } else if (type === "Paper") {
@@ -363,7 +473,79 @@ async function onFilter() {
         base.doi = props.doi;
       }
 
-      return base;
+      rawMapped.push({ rawId: node.id, node: base, raw: node });
+    });
+
+    // 如果有 org 过滤，先收集被选中的组织的 id（基于组织名称匹配 orgFilters）
+    // 我们同时收集它们的 rawId（raw node id），以便用来匹配后端返回的边
+    const allowedOrgIds = new Set<string>();
+    const allowedOrgRawIds = new Set<string>();
+    if (Array.isArray(orgFilters) && orgFilters.length > 0) {
+      rawMapped.forEach((m) => {
+        if (m.node.type === "Organization") {
+          const name = (m.node.label || "").toString();
+          if (orgFilters.includes(name)) {
+            allowedOrgIds.add(String(m.node.id));
+            allowedOrgRawIds.add(String(m.rawId));
+          }
+        }
+      });
+    }
+
+    // 第二次过滤：根据 year/org/author 筛选节点
+    const processedNodes: Node[] = [];
+    const allowedRawIds = new Set<string>();
+    // 如果通过 org 选择，需要把通过 AFFILIATED_WITH 边连接到被选组织的作者也加入（作者可能没有 org_id 字段）
+    const affiliatedAuthorRawIds = new Set<string>();
+    if (allowedOrgRawIds.size > 0) {
+      rawData.edges.forEach((edge: any) => {
+        if (edge.type === "AFFILIATED_WITH") {
+          const s = String(edge.source);
+          const t = String(edge.target);
+          if (allowedOrgRawIds.has(s)) {
+            affiliatedAuthorRawIds.add(t);
+          } else if (allowedOrgRawIds.has(t)) {
+            affiliatedAuthorRawIds.add(s);
+          }
+        }
+      });
+    }
+
+    rawMapped.forEach((m) => {
+      const base = m.node;
+      const raw = m.raw;
+      const type = base.type;
+
+      let include = true;
+      if (type === "Paper") {
+        const y = Number(base.year || 0);
+        include = !Number.isNaN(y) && y >= yearStart && y <= yearEnd;
+      } else if (type === "Organization") {
+        if (Array.isArray(orgFilters) && orgFilters.length > 0) {
+          const name = (base.label || "").toString();
+          include = orgFilters.includes(name);
+        }
+      } else if (type === "Author") {
+        if (authorFilter) {
+          const name = (base.label || "").toString().toLowerCase();
+          include = name.includes(authorFilter);
+        }
+        // 如果选择了机构过滤，则只保留：
+        //  - 作者的 org_id 在被选组织 id 列表中，或
+        //  - 作者通过后端返回的 AFFILIATED_WITH 边与被选组织相连（在 affiliatedAuthorRawIds 中）
+        if (include && allowedOrgIds.size > 0) {
+          const orgId = (base as any).org_id || (base as any).orgId || raw.properties?.org_id;
+          const rawIdStr = String(m.rawId);
+          const byProp = orgId != null && allowedOrgIds.has(String(orgId));
+          const byEdge = affiliatedAuthorRawIds.has(rawIdStr);
+          include = byProp || byEdge;
+        }
+      }
+
+      if (include) {
+        processedNodes.push(base);
+        allowedRawIds.add(String(m.rawId));
+      }
     });
 
     // 根据组织节点动态生成筛选下拉选项，保持前后端一致
@@ -372,8 +554,17 @@ async function onFilter() {
     );
     orgOptions.value = orgNames.map((name) => ({ label: name, value: name }));
 
+    // 只保留端点都在 processedNodes 中的边。注意 rawData.edges 的 source/target 可能是原始 node.id（node.id），
+    // 因此我们同时维护 allowedRawIds（raw node.id）和 allowedProcessedIds（映射后用作前端 id）进行判断。
+    const allowedProcessedIds = new Set(processedNodes.map((n) => String(n.id)));
     const edgeMap = new Map<string, Edge>();
-    rawData.edges.forEach((edge) => {
+    rawData.edges.forEach((edge: any) => {
+      const srcOk =
+        allowedRawIds.has(String(edge.source)) || allowedProcessedIds.has(String(edge.source));
+      const tgtOk =
+        allowedRawIds.has(String(edge.target)) || allowedProcessedIds.has(String(edge.target));
+      if (!srcOk || !tgtOk) return; // 跳过任何一端不在过滤后的节点集内的边
+
       const key = `${edge.source}-${edge.target}-${edge.type}`;
       if (!edgeMap.has(key)) {
         edgeMap.set(key, {
@@ -389,14 +580,14 @@ async function onFilter() {
     // ===== 在前端补充单位-作者关系边（AFFILIATED_WITH） =====
     // 某些情况下后端未返回 AFFILIATED_WITH 边，但 Author 节点上有 org_id 属性
     const orgIdSet = new Set(
-      processedNodes.filter((n) => n.type === "Organization").map((n) => n.id)
+      processedNodes.filter((n) => n.type === "Organization").map((n) => String(n.id))
     );
     const orgAuthorEdges: Edge[] = [];
     processedNodes
       .filter((n) => n.type === "Author")
       .forEach((author: any) => {
         const orgId = author.org_id as string | undefined;
-        if (orgId && orgIdSet.has(orgId)) {
+        if (orgId && orgIdSet.has(String(orgId))) {
           const key = `${author.id}-${orgId}-AFFILIATED_WITH`;
           if (!edgeMap.has(key)) {
             const e: Edge = {
@@ -418,12 +609,20 @@ async function onFilter() {
     // 保存完整图数据
     fullGraph.value = dto;
 
+    // 调试：查看所有边
+    console.log("所有边:", fullGraph.value.edges);
+
     // 初始展示：只显示单位 + 作者，以及它们之间的连线
     const initialNodes = processedNodes.filter(
-      (n) => n.type === "Organization" || n.type === "Author"
+      (n) => n.type === "Organization" || n.type === "Author" || n.type === "Paper"
     );
     // 单位-作者边：关系类型为 AFFILIATED_WITH（包括前端补充的那部分）
-    const initialEdges = fullGraph.value.edges.filter((e) => e.relation === "AFFILIATED_WITH");
+    const initialEdges = fullGraph.value.edges.filter(
+      (e) => e.relation === "AFFILIATED_WITH" || e.relation === "AUTHORED" || e.relation === "CITES"
+    );
+
+    // 调试：查看初始边
+    console.log("初始边:", initialEdges);
 
     visibleGraph.value = {
       nodes: initialNodes,
@@ -454,7 +653,7 @@ function draw(dto: GraphDTO) {
     "【节点类型检查】",
     dto.nodes.map((n) => ({ id: n.id, label: n.label, type: n.type }))
   );
-  const option: echarts.EChartsOption = {
+  const option: any = {
     tooltip: {
       formatter: (params: any) => {
         if (params.dataType === "edge") {
@@ -505,12 +704,15 @@ function draw(dto: GraphDTO) {
           };
           return nodeData;
         }),
-        links: dto.edges.map((e) => ({
-          source: e.source,
-          target: e.target,
-          relation: e.relation,
-          lineStyle: lineStyleMap[e.relation] || { width: 1.5, color: "#999" },
-        })),
+        links: dto.edges.map((e) => {
+          console.log(`处理边: ${e.source} -> ${e.target} (${e.relation})`);
+          return {
+            source: e.source,
+            target: e.target,
+            relation: e.relation,
+            lineStyle: lineStyleMap[e.relation] || { width: 1.5, color: "#999" },
+          };
+        }),
         categories: Object.keys(color).map((name) => ({ name })),
         force: { repulsion: 800, edgeLength: 120, gravity: 0.05 },
         emphasis: { focus: "adjacency", lineStyle: { width: 3 } },
@@ -575,6 +777,11 @@ function toggleAuthorPapers(authorId: string) {
 
   const paperIds = new Set(authoredEdges.map((e) => (e.source === authorId ? e.target : e.source)));
 
+  // 找到这些论文的所有引用关系边（CITES）
+  const citationEdges = fullGraph.value.edges.filter(
+    (e) => e.relation === "CITES" && (paperIds.has(e.source) || paperIds.has(e.target))
+  );
+
   if (expandedAuthors.value.has(authorId)) {
     // 已展开 -> 折叠：从可见图中移除这些论文节点和对应边
     const newNodes = visibleGraph.value.nodes.filter(
@@ -583,8 +790,9 @@ function toggleAuthorPapers(authorId: string) {
     const newEdges = visibleGraph.value.edges.filter(
       (e) =>
         !(
-          e.relation === "AUTHORED" &&
-          (paperIds.has(e.source) || paperIds.has(e.target) || e.source === authorId)
+          (e.relation === "AUTHORED" &&
+            (paperIds.has(e.source) || paperIds.has(e.target) || e.source === authorId)) ||
+          (e.relation === "CITES" && (paperIds.has(e.source) || paperIds.has(e.target)))
         )
     );
 
@@ -596,15 +804,42 @@ function toggleAuthorPapers(authorId: string) {
       (n) => n.type === "Paper" && paperIds.has(n.id)
     );
 
+    // 找到这些引用关系中涉及的所有被引用论文
+    const citedPaperIds = new Set<string>();
+    citationEdges.forEach((e) => {
+      if (e.source !== authorId) {
+        citedPaperIds.add(e.source);
+      }
+      if (e.target !== authorId) {
+        citedPaperIds.add(e.target);
+      }
+    });
+    // 移除当前作者的论文，只保留被引用的其他论文
+    citedPaperIds.forEach((id) => paperIds.delete(id));
+
+    // 获取被引用论文的节点信息
+    const citedPaperNodes = fullGraph.value.nodes.filter(
+      (n) => n.type === "Paper" && citedPaperIds.has(n.id)
+    );
+
     const nodeMap = new Map<string, Node>();
     visibleGraph.value.nodes.forEach((n) => nodeMap.set(n.id, n));
     paperNodes.forEach((n) => nodeMap.set(n.id, n));
+    citedPaperNodes.forEach((n) => nodeMap.set(n.id, n));
 
     const edgeMap = new Map<string, Edge>();
     visibleGraph.value.edges.forEach((e) =>
       edgeMap.set(`${e.source}-${e.target}-${e.relation}`, e)
     );
     authoredEdges.forEach((e) => {
+      edgeMap.set(`${e.source}-${e.target}-${e.relation}`, {
+        source: e.source,
+        target: e.target,
+        relation: e.relation as Edge["relation"],
+        ...(e as any).properties,
+      });
+    });
+    citationEdges.forEach((e) => {
       edgeMap.set(`${e.source}-${e.target}-${e.relation}`, {
         source: e.source,
         target: e.target,
