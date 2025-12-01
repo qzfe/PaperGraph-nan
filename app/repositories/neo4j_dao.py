@@ -25,12 +25,13 @@ class GraphDAO:
         cypher = """
         MATCH (o:Organization)<-[r2:AFFILIATED_WITH]-(a:Author)
         OPTIONAL MATCH (a)-[r:AUTHORED]->(b:Paper)
+        OPTIONAL MATCH (b)-[c:CITES]->(cited_paper:Paper)
         WHERE
         ($year_start IS NULL OR b.year >= $year_start) AND
         ($year_end   IS NULL OR b.year <= $year_end)   AND
         ($author     = ""    OR  a.name CONTAINS $author) AND
         ($orgs       = []   OR o.name IN $orgs)
-        WITH b, o, a, r, r2,
+        WITH b, o, a, r, r2, c, cited_paper,
             collect(DISTINCT a.name) AS paper_authors,
             collect(DISTINCT o.name) AS paper_orgs
         RETURN
@@ -42,6 +43,9 @@ class GraphDAO:
             o      AS o_node,
             r      AS rel,
             r2     AS rel2,
+            c      AS citation_rel,
+            cited_paper.id AS cited_paper_id,
+            cited_paper AS cited_paper_node,
             paper_authors,
             paper_orgs
         LIMIT $limit
@@ -102,6 +106,45 @@ class GraphDAO:
                         "type": "AFFILIATED_WITH",
                         "properties": {},
                     })
+
+                # 3）论文引用关系（CITES）
+                if rec["citation_rel"] and rec["cited_paper_id"] and rec["b_id"]:
+                    citation_rel = rec["citation_rel"]
+                    edges.append({
+                        "id": str(citation_rel.id),
+                        "source": rec["b_id"],
+                        "target": rec["cited_paper_id"],
+                        "type": "CITES",
+                        "properties": dict(citation_rel),
+                    })
+
+                # 4）添加被引用的论文节点
+                if rec["cited_paper_node"] and rec["cited_paper_id"]:
+                    cited_paper = rec["cited_paper_node"]
+                    cited_paper_id = rec["cited_paper_id"]
+
+                    if cited_paper_id not in node_ids:
+                        # 获取被引用论文的作者和机构信息
+                        cited_authors = session.run("""
+                            MATCH (p:Paper {id: $paper_id})<-[:AUTHORED]-(a:Author)
+                            RETURN collect(DISTINCT a.name) AS authors
+                        """, paper_id=cited_paper_id).single()["authors"]
+
+                        cited_orgs = session.run("""
+                            MATCH (p:Paper {id: $paper_id})<-[:AUTHORED]-(a:Author)-[:AFFILIATED_WITH]->(o:Organization)
+                            RETURN collect(DISTINCT o.name) AS orgs
+                        """, paper_id=cited_paper_id).single()["orgs"]
+
+                        nodes.append({
+                            "id": cited_paper_id,
+                            "label": "Paper",
+                            "properties": {
+                                **dict(cited_paper),
+                                "authors": cited_authors,
+                                "orgs": cited_orgs,
+                            }
+                        })
+                        node_ids.add(cited_paper_id)
         logger.info("[返回] 节点数={} 边数={}", len(nodes), len(edges))
         return nodes, edges
 
