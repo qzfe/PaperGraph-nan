@@ -1,132 +1,127 @@
-import requests
+"""加载示例数据"""
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.database import SessionLocal, neo4j_conn
-from app.models.mysql_models import PaperInfo, AuthorInfo, OrganizationInfo, PaperAuthorRelation, AuthorOrganizationRelation
+from app.models.mysql_models import PaperInfo, AuthorInfo, OrganizationInfo, PaperAuthorRelation
 from app.repositories.neo4j_dao import GraphDAO
 from loguru import logger
+import random
+from faker import Faker
+fake = Faker(["en_US", "zh_CN"])
 
-def fetch_papers_by_keyword(keyword, per_page=20):
-    url = "https://api.openalex.org/works"
-    params = {
-        "filter": f"title.search:{keyword}",
-        "per-page": per_page
-    }
-    return requests.get(url, params=params).json()["results"]
-
-def clean_paper(raw):
-    return {
-        "paper_id": raw["id"].split("/")[-1],
-        "title": raw.get("title", ""),
-        "abstract": (raw.get("abstract_inverted_index") and 
-                     " ".join(raw["abstract_inverted_index"].keys())) or "",
-        "year": raw.get("publication_year", None),
-        "venue": raw.get("host_venue", {}).get("display_name", ""),
-        "doi": raw.get("doi", ""),
-        "keywords": ";".join([kw["display_name"] for kw in raw.get("keywords", [])]),
-        "url": raw.get("primary_location", {}).get("landing_page_url", ""),
-        "citation_count": raw.get("cited_by_count", 0)
-    }
-
-def fetch_author(author_id):
-    url = f"https://api.openalex.org/authors/{author_id}"
-    return requests.get(url).json()
-
-def clean_author(raw):
-    author_id = raw["id"].split("/")[-1]
-    return {
-        "author_id": author_id,
-        "name": raw.get("display_name", ""),
-        "org_id": None,
-        "h_index": raw.get("h_index", 0),
-        "paper_count": raw.get("works_count", 0),
-        "orcid": raw.get("orcid", ""),
-        "email": ""
-    }
-
-
-def fetch_org(org_id):
-    url = f"https://api.openalex.org/institutions/{org_id}"
-    return requests.get(url).json()
-
-def clean_org(raw):
-    return {
-        "org_id": raw["id"].split("/")[-1],
-        "name": raw.get("display_name", ""),
-        "country": raw.get("country_code", ""),
-        "abbreviation": (raw.get("display_name_acronyms") or [""])[0],
-        "rank_score": raw.get("x_concepts", [{}])[0].get("score", 0),
-        "paper_count": raw.get("works_count", 0)
-    }
-
-def extract_paper_author_relations(paper_raw):
-    paper_id = paper_raw["id"].split("/")[-1]
-    relations = []
-    for idx, auth in enumerate(paper_raw.get("authorships", [])):
-        author_id = auth["author"]["id"].split("/")[-1]
-        is_corr = 1 if auth.get("is_corresponding") else 0
-        relation = {
-            "paper_id": paper_id,
-            "author_id": author_id,
-            "author_order": idx + 1,
-            "is_corresponding": is_corr
-        }
-        relations.append(relation)
-    return relations
-
-def crawl(keyword):
-    papers_raw = fetch_papers_by_keyword(keyword)
-    papers = []
-    authors = {}
-    orgs = {}
-    paper_author_rels = []
-    author_org_rels = []
-
-    for p in papers_raw:
-        clean_p = clean_paper(p)
-        papers.append(clean_p)
-        for auth in p.get("authorships", []):
-            author_id = auth["author"]["id"].split("/")[-1]
-            if author_id not in authors:
-                raw_author = fetch_author(author_id)
-                authors[author_id] = clean_author(raw_author)
-                author_orgs = auth.get("institutions", None)
-                if author_orgs:
-                    org_id = author_orgs[0]["id"].split("/")[-1]
-                    authors[author_id]["org_id"] = org_id
-                    if org_id not in orgs:
-                        raw_org = fetch_org(org_id)
-                        orgs[org_id] = clean_org(raw_org)
-
-        paper_author_rel = extract_paper_author_relations(p)
-        paper_author_rels.extend(paper_author_rel)
-
-    return papers, list(authors.values()), list(orgs.values()), paper_author_rels
-
-def load_data(papers, authors, orgs, paper_authors):
+def load_sample_data():
     db = SessionLocal()
+    
     try:
+        logger.info("开始加载示例数据...")
+
+        # ================================
+        # 1. 组织（10 个）
+        # ================================
+        orgs = []
+        org_names = [
+            ("清华大学", "中国", "THU"),
+            ("北京大学", "中国", "PKU"),
+            ("浙江大学", "中国", "ZJU"),
+            ("中国科学院大学", "中国", "UCAS"),
+            ("复旦大学", "中国", "FDU"),
+            ("Stanford University", "USA", "Stanford"),
+            ("MIT", "USA", "MIT"),
+            ("Carnegie Mellon University", "USA", "CMU"),
+            ("University of Oxford", "UK", "Oxford"),
+            ("University of Tokyo", "Japan", "UTokyo")
+        ]
+
+        for i, (name, country, abbr) in enumerate(org_names, start=1):
+            orgs.append({
+                "org_id": f"org_{i:03d}",
+                "name": name,
+                "country": country,
+                "abbreviation": abbr,
+                "rank_score": round(random.uniform(80, 100), 2),
+                "paper_count": 0
+            })
+
         for org_data in orgs:
             db.merge(OrganizationInfo(**org_data))
         db.commit()
         logger.info(f"✓ 创建了 {len(orgs)} 个单位")
+
+        # ================================
+        # 2. 作者（30 个）
+        # ================================
+        authors = []
+        for i in range(1, 31):
+            authors.append({
+                "author_id": f"author_{i:03d}",
+                "name": fake.name(),
+                "org_id": f"org_{random.randint(1, 10):03d}",
+                "h_index": random.randint(5, 70),
+                "paper_count": 0,
+                "orcid": f"0000-000{random.randint(1000,9999)}-{random.randint(1000,9999)}",
+                "email": fake.email()
+            })
 
         for author_data in authors:
             db.merge(AuthorInfo(**author_data))
         db.commit()
         logger.info(f"✓ 创建了 {len(authors)} 个作者")
 
+        # ================================
+        # 3. 论文（50 篇）
+        # ================================
+        venues = ["AAAI 2023", "ACL 2022", "KDD 2023", "ICML 2023", "NeurIPS 2022",
+                  "EMNLP 2023", "WWW 2023", "SIGIR 2022", "IJCAI 2023"]
+
+        keywords_pool = ["深度学习", "图神经网络", "知识图谱", "自然语言处理", "大模型",
+                         "机器翻译", "强化学习", "表示学习", "元学习"]
+
+        papers = []
+        for i in range(1, 51):
+            papers.append({
+                "paper_id": f"paper_{i:03d}",
+                "title": fake.sentence(nb_words=6),
+                "abstract": fake.text(max_nb_chars=150),
+                "year": random.randint(2018, 2024),
+                "venue": random.choice(venues),
+                "doi": f"10.1000/{fake.pyint()}",
+                "keywords": ";".join(random.sample(keywords_pool, k=3)),
+                "url": fake.url(),
+                "citation_count": random.randint(0, 200)
+            })
+
         for paper_data in papers:
             db.merge(PaperInfo(**paper_data))
         db.commit()
         logger.info(f"✓ 创建了 {len(papers)} 篇论文")
 
-        for rel_data in paper_authors:
+        # ================================
+        # 4. 论文-作者关系（随机 120~150 个）
+        # ================================
+        relations = []
+        for p in papers:
+            paper_id = p["paper_id"]
+
+            # 每篇论文 2～4 个作者
+            num_auth = random.randint(2, 4)
+            chosen_authors = random.sample(authors, num_auth)
+
+            for order, auth in enumerate(chosen_authors, start=1):
+                relations.append({
+                    "paper_id": paper_id,
+                    "author_id": auth["author_id"],
+                    "author_order": order,
+                    "is_corresponding": 1 if order == 1 else 0
+                })
+
+        for rel_data in relations:
             db.add(PaperAuthorRelation(**rel_data))
         db.commit()
-        logger.info(f"✓ 创建了 {len(paper_authors)} 个论文-作者关系")
-
+        logger.info(f"✓ 创建了 {len(relations)} 个论文-作者关系")
+        # ================================
+        # 11/30 修正 paper_count
+        # ================================
         for author in authors:
             count = db.query(PaperAuthorRelation).filter(
                 PaperAuthorRelation.author_id == author["author_id"]
@@ -144,7 +139,9 @@ def load_data(papers, authors, orgs, paper_authors):
             )
         db.commit()
         logger.info("✓ 更新作者和机构的论文数量")
-
+        # ================================
+        # 5. 同步 Neo4j
+        # ================================
         logger.info("开始同步数据到 Neo4j...")
         sync_to_neo4j(db)
 
@@ -228,36 +225,15 @@ def sync_to_neo4j(db):
         logger.error(f"✗ 同步到 Neo4j 失败: {e}")
         raise
 
-def main(keyword):
-    print(f"查找关键词：{keyword} ...\n")
-    papers, authors, orgs, paper_author_rels = crawl(keyword)
-    print(f"获取了 {len(papers)} 篇论文数据: \n")
-    for p in papers:
-        print("==============")
-        print("Paper ID: ", p["paper_id"])
-        print("Title: ", p["title"])
-        print("Year: ", p["year"])
-        print("DOI: ", p["doi"])
-        print("Keywords: ", p["keywords"])
-        print("URL: ", p["url"])
-        print("Citation count: ", p["citation_count"])
-        print("==============\n")
-    for a in authors:
-        print("==============")
-        print("Author ID: ", a["author_id"])
-        print("Name: ", a["name"])
-        print("Organization ID: ", a["org_id"])
-        print("Paper Count: ", a["paper_count"])
-        print("ORCID: ", a["orcid"])
-        print("==============\n")
+def main():
     logger.info("=" * 60)
-    logger.info("论文知识图谱系统 - 加载数据")
+    logger.info("论文知识图谱系统 - 加载示例数据")
     logger.info("=" * 60)
     
     try:
-        load_data(papers, authors, orgs, paper_author_rels)
+        load_sample_data()
         logger.info("=" * 60)
-        logger.info("数据加载成功！")
+        logger.info("示例数据加载成功！")
         logger.info("=" * 60)
         return 0
     except Exception as e:
@@ -265,8 +241,4 @@ def main(keyword):
         return 1
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("用法: python crawler.py <keyword>")
-        sys.exit(1)
-    keyword = sys.argv[1]
-    main(keyword)
+    exit(main())
