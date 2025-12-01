@@ -80,6 +80,23 @@
         <a-button size="small" shape="circle" @click="zoomGraph(0.8)">-</a-button>
       </div>
 
+       <!-- 导出按钮：左下角 -->
+      <div style="position: absolute; left: 16px; bottom: 16px; z-index: 10">
+        <a-button
+          type="primary"
+          style="
+            height: 36px;
+            min-width: 100px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+          "
+          @click="exportGraph"
+        >
+          导出图谱
+        </a-button>
+      </div>
+
       <!-- 方向控制按钮 -->
       <div
         style="
@@ -210,6 +227,8 @@ import * as echarts from "echarts";
 import type { GraphDTO, Node, Edge } from "@/types/graph";
 import { message } from "ant-design-vue";
 import { fetchRootGraph, persistLayout, type GraphResponse } from "@/api/graph";
+import { post as apiPost, get as apiGet } from "@/api/http";
+import axios from "axios";
 /* 筛选状态 */
 const filter = ref({
   year: [2020, 2025],
@@ -269,6 +288,90 @@ function zoomGraph(factor: number) {
   } catch (e) {
     console.warn("图谱缩放失败:", e);
   }
+}
+
+function exportGraph() {
+  if (!ins) return;
+
+  // 执行三轮导出：papers, authors, organizations
+  (async () => {
+    const types = ["papers", "authors", "organizations"];
+    for (const t of types) {
+      try {
+        message.loading({ content: `开始创建 ${t} 导出任务...`, duration: 0, key: `export-${t}` });
+
+        const body = {
+          export_type: t,
+          format: "csv",
+          filters: {},
+          fields: [],
+        };
+
+        // 1. 创建任务
+        const createResp: any = await apiPost("/export/file", body);
+        const jobId = createResp?.job_id || createResp?.jobId || createResp?.id;
+        const status = createResp?.status;
+        if (!jobId || status !== "pending") {
+          message.error(`创建 ${t} 导出任务失败`);
+          message.destroy(`export-${t}`);
+          return;
+        }
+
+        // 2. 轮询任务状态，最多 3 次（间隔 1 秒）
+        let done = false;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const jobResp: any = await apiGet(`/export/job/${jobId}`);
+          const jobStatus = jobResp?.status;
+          if (jobStatus === "done") {
+            done = true;
+            break;
+          }
+          // 否则等待 1 秒后继续
+          await new Promise((res) => setTimeout(res, 1000));
+        }
+
+        if (!done) {
+          message.error(`${t} 导出任务未在指定时间内完成，导出失败`);
+          message.destroy(`export-${t}`);
+          return;
+        }
+
+        // 3. 下载文件（以 blob 下载）
+        message.loading({ content: `下载 ${t} 导出文件...`, duration: 0, key: `export-${t}` });
+        const downloadUrl = `${process.env.VUE_APP_API_BASE.replace(/\/$/, "")}/export/download/${jobId}`;
+        const resp = await axios.get(downloadUrl, { responseType: "blob" });
+
+        // 尝试从 headers 提取文件名
+        let filename = `${t}.csv`;
+        const cd = resp.headers?.["content-disposition"] || resp.headers?.["Content-Disposition"];
+        if (cd) {
+          const m = /filename\*=UTF-8''(.+)$/.exec(cd) || /filename="?([^";]+)"?/.exec(cd);
+          if (m && m[1]) {
+            try {
+              filename = decodeURIComponent(m[1]);
+            } catch (e) {
+              filename = m[1];
+            }
+          }
+        }
+
+        const url = URL.createObjectURL(resp.data);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+
+        message.success({ content: `${t} 导出并下载完成`, key: `export-${t}`, duration: 2 });
+      } catch (err) {
+        console.error("export failed", err);
+        message.error(`导出 ${t} 失败: ${err instanceof Error ? err.message : String(err)}`);
+        return;
+      }
+    }
+  })();
 }
 
 /**
@@ -428,7 +531,7 @@ async function onFilter() {
         //  - 作者的 org_id 在被选组织 id 列表中，或
         //  - 作者通过后端返回的 AFFILIATED_WITH 边与被选组织相连（在 affiliatedAuthorRawIds 中）
         if (include && allowedOrgIds.size > 0) {
-          const orgId = (base.org_id as any) || (base.orgId as any) || raw.properties?.org_id;
+          const orgId = (base as any).org_id || (base as any).orgId || raw.properties?.org_id;
           const rawIdStr = String(m.rawId);
           const byProp = orgId != null && allowedOrgIds.has(String(orgId));
           const byEdge = affiliatedAuthorRawIds.has(rawIdStr);
@@ -539,7 +642,7 @@ function draw(dto: GraphDTO) {
     "【节点类型检查】",
     dto.nodes.map((n) => ({ id: n.id, label: n.label, type: n.type }))
   );
-  const option: echarts.EChartsOption = {
+  const option: any = {
     tooltip: {
       formatter: (params: any) => {
         if (params.dataType === "edge") {
