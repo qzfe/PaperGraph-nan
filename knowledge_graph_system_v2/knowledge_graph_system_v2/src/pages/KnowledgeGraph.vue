@@ -27,7 +27,7 @@
         </h3>
         <a-form layout="vertical">
           <a-form-item label="年份">
-            <a-slider range :min="2000" :max="2025" v-model:value="filter.year" />
+            <a-slider range :min="1980" :max="2025" v-model:value="filter.year" />
           </a-form-item>
           <a-form-item label="机构">
             <a-select
@@ -424,7 +424,7 @@ async function onFilter() {
     hiddenOrgs.value = new Set();
 
     const params = {
-      limit: 1000,
+      limit: 10000,
       yearStart: filter.value.year[0],
       yearEnd: filter.value.year[1],
       orgs: filter.value.orgs,
@@ -815,7 +815,7 @@ function toggleAuthorPapers(authorId: string) {
       }
     });
     // 移除当前作者的论文，只保留被引用的其他论文
-    citedPaperIds.forEach((id) => paperIds.delete(id));
+    //citedPaperIds.forEach((id) => paperIds.delete(id));
 
     // 获取被引用论文的节点信息
     const citedPaperNodes = fullGraph.value.nodes.filter(

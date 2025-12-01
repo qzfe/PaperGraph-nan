@@ -78,7 +78,7 @@ onMounted(async () => {
       // 获取论文总数 - 通过年份统计计算
       const paperRes = await post("/statistics/query", {
         metric: "paper_count_by_year",
-        limit: 1000,
+        limit: 10000,
       });
       // 计算所有年份的论文总数
       paperTotal.value =
@@ -87,14 +87,14 @@ onMounted(async () => {
       // 获取作者总数
       const authorRes = await post("/statistics/query", {
         metric: "top_authors",
-        limit: 1000,
+        limit: 10000,
       });
       authorTotal.value = authorRes.total || authorRes.data?.length || 0;
 
       // 获取机构总数
       const orgRes = await post("/statistics/query", {
         metric: "top_organizations",
-        limit: 1000,
+        limit: 10000,
       });
       orgTotal.value = orgRes.total || orgRes.data?.length || 0;
 

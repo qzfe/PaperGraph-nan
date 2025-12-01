@@ -30,6 +30,7 @@ def clean_paper(raw):
     }
 
 def fetch_author(author_id):
+    print("author id: ",author_id)
     url = f"https://api.openalex.org/authors/{author_id}"
     return requests.get(url).json()
 
@@ -82,8 +83,8 @@ def crawl(keyword):
     orgs = {}
     paper_author_rels = []
     author_org_rels = []
-
     for p in papers_raw:
+        print("paper raw: ",p)
         clean_p = clean_paper(p)
         papers.append(clean_p)
         for auth in p.get("authorships", []):

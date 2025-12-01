@@ -21,7 +21,7 @@ def get_graph_service():
 
 @router.get("/root", response_model=GraphResponse, summary="获取根节点图谱")
 async def get_root_graph(
-    limit: int = Query(100, ge=1, le=1000, description="返回节点数量限制"),
+    limit: int = Query(100, ge=1, le=10000, description="返回节点数量限制"),
     service: GraphService = Depends(get_graph_service)
 ):
     try:
