@@ -80,7 +80,7 @@
         <a-button size="small" shape="circle" @click="zoomGraph(0.8)">-</a-button>
       </div>
 
-       <!-- 导出按钮：左下角 -->
+      <!-- 导出按钮：左下角 -->
       <div style="position: absolute; left: 16px; bottom: 16px; z-index: 10">
         <a-button
           type="primary"
@@ -338,7 +338,10 @@ function exportGraph() {
 
         // 3. 下载文件（以 blob 下载）
         message.loading({ content: `下载 ${t} 导出文件...`, duration: 0, key: `export-${t}` });
-        const downloadUrl = `${process.env.VUE_APP_API_BASE.replace(/\/$/, "")}/export/download/${jobId}`;
+        const downloadUrl = `${process.env.VUE_APP_API_BASE.replace(
+          /\/$/,
+          ""
+        )}/export/download/${jobId}`;
         const resp = await axios.get(downloadUrl, { responseType: "blob" });
 
         // 尝试从 headers 提取文件名
@@ -611,7 +614,9 @@ async function onFilter() {
       (n) => n.type === "Organization" || n.type === "Author" || n.type === "Paper"
     );
     // 单位-作者边：关系类型为 AFFILIATED_WITH（包括前端补充的那部分）
-    const initialEdges = fullGraph.value.edges.filter((e) => e.relation === "AFFILIATED_WITH" || e.relation === "AUTHORED");
+    const initialEdges = fullGraph.value.edges.filter(
+      (e) => e.relation === "AFFILIATED_WITH" || e.relation === "AUTHORED"
+    );
 
     visibleGraph.value = {
       nodes: initialNodes,

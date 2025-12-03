@@ -6,6 +6,7 @@ from typing import Optional
 import os
 
 
+
 class Settings(BaseSettings):
     """系统配置类"""
     
